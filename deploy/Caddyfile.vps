@@ -1,0 +1,17 @@
+{
+  auto_https off
+}
+
+:8443 {
+  tls /etc/caddy/dropspace-cert/fullchain.pem /etc/caddy/dropspace-cert/privkey.pem
+
+  header {
+    Strict-Transport-Security "max-age=31536000"
+    X-Content-Type-Options "nosniff"
+  }
+
+  reverse_proxy 127.0.0.1:8787 {
+    flush_interval -1
+  }
+}
+

@@ -1,0 +1,14 @@
+dropspace.example.com {
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:8787 {
+    flush_interval -1
+    transport http {
+      read_timeout 30m
+      write_timeout 30m
+    }
+  }
+  request_body {
+    max_size 1GB
+  }
+}
+

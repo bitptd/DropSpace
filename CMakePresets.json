@@ -1,0 +1,66 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "windows-mingw-debug",
+      "displayName": "Windows MinGW Debug",
+      "generator": "MinGW Makefiles",
+      "binaryDir": "${sourceDir}/build/windows-mingw-debug",
+      "environment": {
+        "PATH": "${sourceDir}/.tools/Qt/6.8.3/mingw_64/bin;${sourceDir}/.tools/Qt/Tools/mingw1310_64/bin;$penv{PATH}"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/.tools/Qt/6.8.3/mingw_64",
+        "CMAKE_CXX_COMPILER": "${sourceDir}/.tools/Qt/Tools/mingw1310_64/bin/g++.exe",
+        "CMAKE_MAKE_PROGRAM": "${sourceDir}/.tools/Qt/Tools/mingw1310_64/bin/mingw32-make.exe"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "windows-core-tests",
+      "displayName": "Windows core tests without Qt UI",
+      "generator": "MinGW Makefiles",
+      "binaryDir": "${sourceDir}/build/windows-core-tests",
+      "environment": {
+        "PATH": "${sourceDir}/.tools/Qt/6.8.3/mingw_64/bin;${sourceDir}/.tools/Qt/Tools/mingw1310_64/bin;$penv{PATH}"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "${sourceDir}/.tools/Qt/Tools/mingw1310_64/bin/g++.exe",
+        "CMAKE_MAKE_PROGRAM": "${sourceDir}/.tools/Qt/Tools/mingw1310_64/bin/mingw32-make.exe",
+        "DROPSPACE_BUILD_CLIENT": "OFF",
+        "DROPSPACE_BUILD_TESTS": "ON"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "windows-mingw-release",
+      "displayName": "Windows MinGW Release",
+      "inherits": "windows-mingw-debug",
+      "binaryDir": "${sourceDir}/build/windows-mingw-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows-mingw-debug", "configurePreset": "windows-mingw-debug" },
+    { "name": "windows-mingw-release", "configurePreset": "windows-mingw-release" },
+    { "name": "windows-core-tests", "configurePreset": "windows-core-tests" }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-mingw-debug",
+      "configurePreset": "windows-mingw-debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-core-tests",
+      "configurePreset": "windows-core-tests",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}
+

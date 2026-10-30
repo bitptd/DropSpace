@@ -1,0 +1,14 @@
+/.tools/
+/build/
+/out/
+/dist/
+/test_dir/
+/.cache/
+/.runtime/
+*.user
+*.log
+.DS_Store
+*.dSYM/
+CMakeUserPresets.json
+/cmake-build-*/
+

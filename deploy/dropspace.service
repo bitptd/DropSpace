@@ -1,0 +1,23 @@
+[Unit]
+Description=DropSpace relay service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dropspace
+Group=dropspace
+ExecStart=/usr/local/bin/dropspace-server serve -config /etc/dropspace/config.json
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dropspace
+UMask=0077
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
+
