@@ -9,6 +9,7 @@
 #include <QActionGroup>
 #include <QCollator>
 #include <QCloseEvent>
+#include <QCursor>
 #include <QDateTime>
 #include <QDragEnterEvent>
 #include <QDropEvent>
@@ -115,7 +116,10 @@ class NativeDragListWidget final : public QListWidget {
         (event->position().toPoint() - pressPosition_).manhattanLength() >=
             QApplication::startDragDistance()) {
       armed_ = false;
-      if (currentItem() && startNativeDrag) startNativeDrag();
+      if (currentItem() && startNativeDrag) {
+        startNativeDrag();
+        finishNativeDrag();
+      }
       return;
     }
     QListWidget::mouseMoveEvent(event);
@@ -127,10 +131,28 @@ class NativeDragListWidget final : public QListWidget {
   }
 
   void startDrag(Qt::DropActions) override {
-    if (currentItem() && startNativeDrag) startNativeDrag();
+    if (currentItem() && startNativeDrag) {
+      startNativeDrag();
+      finishNativeDrag();
+    }
   }
 
  private:
+  void finishNativeDrag() {
+    // AppKit consumes the physical mouse-up that ends its native dragging
+    // session, so Qt never receives the release that clears rubber-band state.
+    // Finish the QListWidget gesture explicitly before accepting new hover or
+    // selection input.
+    const QPoint global = QCursor::pos();
+    const QPoint local = viewport()->mapFromGlobal(global);
+    QMouseEvent release(QEvent::MouseButtonRelease, QPointF(local), QPointF(global),
+                        Qt::LeftButton, Qt::NoButton,
+                        QApplication::keyboardModifiers());
+    QListWidget::mouseReleaseEvent(&release);
+    setState(QAbstractItemView::NoState);
+    viewport()->update();
+  }
+
   QPoint pressPosition_;
   bool armed_ = false;
 };
@@ -653,6 +675,8 @@ void MainWindow::showFullWindow() {
   trayDismissTimer_->stop();
   trayPopup_ = false;
   setWindowFlags(Qt::Window);
+  setMinimumSize(QSize(0, 0));
+  setMaximumSize(QSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX));
   actionBar_->show();
   dropHint_->show();
   dropZone_->setMinimumHeight(260);
@@ -679,7 +703,7 @@ void MainWindow::showTrayPopup(const QRect& trayGeometry) {
   // Keep the left-click surface compact: only the dashed file area with two
   // icon rows. Full-window and quit actions belong to the tray right-click
   // menu and are never embedded in this popup.
-  resize(520, 240);
+  setFixedSize(520, 240);
   const QScreen* screen = trayGeometry.isValid()
       ? QGuiApplication::screenAt(trayGeometry.center())
       : QGuiApplication::primaryScreen();
