@@ -4,7 +4,7 @@ DropSpace phase one is a Windows Qt 6 desktop client plus a single-process Go/SQ
 
 Development is in progress. The authoritative implementation status and executed evidence are in [docs/acceptance.md](docs/acceptance.md).
 
-The macOS implementation handoff, including the AppKit `NSFilePromiseProvider` design, Finder acceptance matrix, Keychain requirements, UI parity rules, and a ready-to-use Codex kickoff prompt, is in [docs/MACOS_CODEX_HANDOFF.md](docs/MACOS_CODEX_HANDOFF.md).
+The macOS implementation handoff, including the AppKit `NSFilePromiseProvider` design, Finder acceptance matrix, Keychain requirements, and UI parity rules, is in [docs/MACOS_CODEX_HANDOFF.md](docs/MACOS_CODEX_HANDOFF.md). A copy-ready prompt with the Git branch workflow is in [docs/MACOS_CODEX_PROMPT.md](docs/MACOS_CODEX_PROMPT.md).
 
 ## Windows build
 
