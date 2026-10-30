@@ -1,10 +1,28 @@
 # DropSpace
 
-DropSpace phase one is a Windows Qt 6 desktop client plus a single-process Go/SQLite VPS relay. Files upload directly. Folders are encoded as one immutable ZIP object and are safely restored to real folders at delivery. This workspace intentionally does not implement the macOS client; its Codex implementation consumes the same protocol.
+DropSpace phase one is a Windows/macOS Qt 6 desktop client plus a single-process Go/SQLite VPS relay. Files upload directly. Folders are encoded as one immutable ZIP object and are safely restored to real folders at delivery. The macOS client uses AppKit File Promises for delayed Finder delivery and macOS Keychain for its device token.
 
 Development is in progress. The authoritative implementation status and executed evidence are in [docs/acceptance.md](docs/acceptance.md).
 
 The macOS implementation handoff, including the AppKit `NSFilePromiseProvider` design, Finder acceptance matrix, Keychain requirements, and UI parity rules, is in [docs/MACOS_CODEX_HANDOFF.md](docs/MACOS_CODEX_HANDOFF.md). A copy-ready prompt with the Git branch workflow is in [docs/MACOS_CODEX_PROMPT.md](docs/MACOS_CODEX_PROMPT.md).
+
+## macOS build
+
+The verified Apple Silicon development preset uses Xcode 26.6, CMake 4.1.1,
+Ninja 1.11.1 and Homebrew `qtbase` 6.12.0:
+
+```bash
+brew install qtbase
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer cmake --preset macos-arm64-debug
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer cmake --build --preset macos-arm64-debug
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ctest --preset macos-arm64-debug
+```
+
+The app is generated at
+`build/macos-arm64-debug/client/DropSpace.app`. The P1 synthetic Finder Promise
+surface can be launched with `--p1-file-promises`; it exposes a 3-second file
+and 15-second ZIP-backed real-folder delivery case. The build generates the
+bundle icon from the repository's current `client/resources/icon.jpg`.
 
 ## Windows build
 

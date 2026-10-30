@@ -6,6 +6,11 @@
 #include <QIcon>
 #include <QMenu>
 #include <QSystemTrayIcon>
+#include <QMessageBox>
+
+#ifdef __APPLE__
+#include "platform/macos/FilePromiseDrag.h"
+#endif
 
 int main(int argc, char* argv[]) {
   QApplication app(argc, argv);
@@ -35,6 +40,13 @@ int main(int argc, char* argv[]) {
       window.showTrayPopup(tray.geometry());
   });
   QObject::connect(quitAction, &QAction::triggered, &app, [&app, &tray] {
+#ifdef __APPLE__
+    if (dropspace::macos::activeFilePromiseCount() > 0 &&
+        QMessageBox::question(nullptr, QStringLiteral("File Promise 正在进行"),
+                              QStringLiteral("Finder 仍在接收内容。要取消并退出吗？")) !=
+            QMessageBox::Yes)
+      return;
+#endif
     tray.hide();
     app.quit();
   });

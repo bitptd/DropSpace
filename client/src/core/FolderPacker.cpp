@@ -245,7 +245,8 @@ bool packFolder(const QString& sourceRoot, const QString& outputZipPart,
   for (const auto& entry : entries) {
     const QFileInfo before(entry.absolutePath);
     if (before.isSymLink() || isReparsePoint(entry.absolutePath) ||
-        before.isDir() != entry.directory || before.size() != entry.size ||
+        before.isDir() != entry.directory ||
+        (!entry.directory && before.size() != entry.size) ||
         before.lastModified().toMSecsSinceEpoch() != entry.modifiedMs) {
       *error = QStringLiteral("Folder changed while packing: %1").arg(entry.relativePath);
       writer.close();

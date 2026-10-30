@@ -3,7 +3,11 @@
 #include "core/FolderPacker.h"
 #include "core/CachePlanner.h"
 #include "core/SafeExtractor.h"
+#ifdef _WIN32
 #include "platform/windows/CredentialStore.h"
+#elif defined(__APPLE__)
+#include "platform/macos/CredentialStore.h"
+#endif
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -88,6 +92,8 @@ bool ApiClient::restore(QString* error) {
   spaceId_ = identity.spaceId;
 #ifdef _WIN32
   token_ = windows::readDeviceToken(identity.serverUrl, identity.deviceId, error);
+#elif defined(__APPLE__)
+  token_ = macos::readDeviceToken(identity.serverUrl, identity.deviceId, error);
 #endif
   if (token_.isEmpty()) return false;
   refreshSnapshot();
@@ -98,7 +104,11 @@ QNetworkRequest ApiClient::request(const QString& relative) const {
   QUrl url = server_;
   url.setPath(relative);
   QNetworkRequest result(url);
+#ifdef __APPLE__
+  result.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("DropSpace/0.1 macOS"));
+#else
   result.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("DropSpace/0.1 Windows"));
+#endif
   if (!token_.isEmpty()) result.setRawHeader("Authorization", "Bearer " + token_);
   return result;
 }
@@ -112,7 +122,11 @@ void ApiClient::pair(const QString& serverUrl, const QString& pairingToken,
   }
   QJsonObject body{{QStringLiteral("pairing_token"), pairingToken.trimmed()},
                    {QStringLiteral("display_name"), displayName.trimmed()},
+#ifdef __APPLE__
+                   {QStringLiteral("platform"), QStringLiteral("macos")}};
+#else
                    {QStringLiteral("platform"), QStringLiteral("windows")}};
+#endif
   auto pairRequest = request(QStringLiteral("/v1/pair"));
   pairRequest.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
   auto* reply = network_.post(pairRequest, QJsonDocument(body).toJson(QJsonDocument::Compact));
@@ -129,6 +143,10 @@ void ApiClient::pair(const QString& serverUrl, const QString& pairingToken,
     QString error;
 #ifdef _WIN32
     if (!windows::writeDeviceToken(server_.toString(), deviceId, token, &error)) {
+#elif defined(__APPLE__)
+    if (!macos::writeDeviceToken(server_.toString(), deviceId, token, &error)) {
+#endif
+#if defined(_WIN32) || defined(__APPLE__)
       reply->deleteLater();
       emit failed(QStringLiteral("无法保存设备凭据：%1").arg(error));
       return;
@@ -137,6 +155,8 @@ void ApiClient::pair(const QString& serverUrl, const QString& pairingToken,
     if (!database_->saveIdentity({server_.toString(), spaceId, deviceId}, &error)) {
 #ifdef _WIN32
       (void)windows::deleteDeviceToken(server_.toString(), deviceId, nullptr);
+#elif defined(__APPLE__)
+      (void)macos::deleteDeviceToken(server_.toString(), deviceId, nullptr);
 #endif
       reply->deleteLater();
       emit failed(QStringLiteral("无法保存设备身份：%1").arg(error));

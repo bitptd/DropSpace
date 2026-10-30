@@ -1,6 +1,7 @@
 #include "ui/MainWindow.h"
 
 #include "core/ApiClient.h"
+#include "core/FolderPacker.h"
 #include "core/SafeExtractor.h"
 #include "storage/ClientDatabase.h"
 
@@ -53,11 +54,39 @@
 #ifdef _WIN32
 #include "platform/windows/VirtualFileDrag.h"
 #include <windows.h>
+#elif defined(__APPLE__)
+#include "platform/macos/FilePromiseDrag.h"
 #endif
 
 namespace dropspace {
 
 namespace {
+
+#ifdef __APPLE__
+bool p1PromiseMode() {
+  return QCoreApplication::arguments().contains(QStringLiteral("--p1-file-promises"));
+}
+
+void appendP1PromiseRows(QListWidget* files) {
+  if (!p1PromiseMode()) return;
+  auto add = [files](const QString& name, const QString& kind) {
+    auto* item = new QListWidgetItem(
+        files->style()->standardIcon(kind == QStringLiteral("folder")
+                                         ? QStyle::SP_DirIcon : QStyle::SP_FileIcon),
+        name, files);
+    item->setData(Qt::UserRole, QVariantMap{
+        {QStringLiteral("p1_demo"), kind},
+        {QStringLiteral("name"), name},
+        {QStringLiteral("kind"), kind},
+    });
+    item->setToolTip(kind == QStringLiteral("folder")
+        ? QStringLiteral("P1：放到 Finder 后后台等待 15 秒，再由 SafeExtractor 交付真实文件夹")
+        : QStringLiteral("P1：放到 Finder 后后台等待 3 秒，再交付真实文件"));
+  };
+  add(QStringLiteral("DropSpace-delay-3s.txt"), QStringLiteral("file"));
+  add(QStringLiteral("DropSpace 文件夹"), QStringLiteral("folder"));
+}
+#endif
 
 class NativeDragListWidget final : public QListWidget {
  public:
@@ -109,6 +138,9 @@ class NativeDragListWidget final : public QListWidget {
 }  // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
+#ifdef __APPLE__
+  macos::installFilePromiseEventMonitor();
+#endif
   setWindowTitle(QStringLiteral("DropSpace"));
   resize(760, 480);
 
@@ -298,6 +330,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
           });
         }
       }
+#ifdef __APPLE__
+      appendP1PromiseRows(files_);
+#endif
       applyView();
       applySort();
     });
@@ -517,8 +552,89 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   };
   nativeFiles->startNativeDrag = startSelectedDrag;
   connect(dragRemoteButton, &QPushButton::pressed, this, startSelectedDrag);
+#elif defined(__APPLE__)
+  auto startSelectedDrag = [this] {
+    const auto selected = files_->selectedItems();
+    if (selected.isEmpty()) return;
+    std::vector<macos::FilePromiseEntry> promises;
+    promises.reserve(static_cast<std::size_t>(selected.size()));
+    for (auto* item : selected) {
+      const auto file = QJsonObject::fromVariantMap(item->data(Qt::UserRole).toMap());
+      if (file.isEmpty()) continue;
+      const QString demo = file.value(QStringLiteral("p1_demo")).toString();
+      const bool folder = file.value(QStringLiteral("kind")).toString() == QStringLiteral("folder");
+      macos::FilePromiseEntry entry;
+      entry.fileName = file.value(QStringLiteral("name")).toString();
+      entry.folder = folder;
+      entry.contentLease = std::make_shared<int>(1);
+      if (!demo.isEmpty()) {
+        const QString sessionRoot = QDir(QStandardPaths::writableLocation(
+            QStandardPaths::AppLocalDataLocation)).filePath(
+                QStringLiteral("transfers/p1-promises/%1")
+                    .arg(QUuid::createUuid().toString(QUuid::WithoutBraces)));
+        QDir().mkpath(sessionRoot);
+        entry.contentLease = std::shared_ptr<void>(
+            new QString(sessionRoot), [](void* value) {
+              std::unique_ptr<QString> root(static_cast<QString*>(value));
+              QDir(*root).removeRecursively();
+            });
+        entry.acquireObject = [sessionRoot, folder](QString* error) {
+          std::this_thread::sleep_for(folder ? std::chrono::seconds(15)
+                                             : std::chrono::seconds(3));
+          if (!folder) {
+            const QString object = QDir(sessionRoot).filePath(QStringLiteral("delayed-object.bin"));
+            QFile output(object);
+            if (!output.open(QIODevice::WriteOnly | QIODevice::NewOnly) ||
+                output.write("DropSpace delayed Finder file promise\n") < 0) {
+              *error = QStringLiteral("无法生成 P1 延迟文件对象");
+              return QString();
+            }
+            output.close();
+            return object;
+          }
+          const QString source = QDir(sessionRoot).filePath(QStringLiteral("source"));
+          const QString nested = QDir(source).filePath(QStringLiteral("嵌套/Unicode 名称"));
+          const QString empty = QDir(source).filePath(QStringLiteral("空目录"));
+          if (!QDir().mkpath(nested) || !QDir().mkpath(empty)) {
+            *error = QStringLiteral("无法生成 P1 文件夹源树");
+            return QString();
+          }
+          QFile payload(QDir(nested).filePath(QStringLiteral("内容.txt")));
+          if (!payload.open(QIODevice::WriteOnly | QIODevice::NewOnly) ||
+              payload.write("DropSpace Unicode folder promise\n") < 0) {
+            *error = QStringLiteral("无法生成 P1 文件夹内容");
+            return QString();
+          }
+          payload.close();
+          const QString zip = QDir(sessionRoot).filePath(QStringLiteral("folder.zip"));
+          PackedFolder packed;
+          if (!packFolder(source, zip, &packed, error)) return QString();
+          QDir(source).removeRecursively();
+          return zip;
+        };
+      } else {
+        if (!api_) continue;
+        entry.acquireObject = [api = api_, file](QString* error) {
+          return api->acquireReadableObjectBlocking(file, error);
+        };
+      }
+      promises.push_back(std::move(entry));
+    }
+    QString error;
+    if (!promises.empty() && !macos::startFilePromiseDrag(files_->viewport(),
+                                                           std::move(promises), &error)) {
+      status_->setText(QStringLiteral("Finder File Promise 启动失败：%1").arg(error));
+    }
+  };
+  nativeFiles->startNativeDrag = startSelectedDrag;
 #else
   dragRemoteButton->setEnabled(false);
+#endif
+
+#ifdef __APPLE__
+  appendP1PromiseRows(files_);
+  if (p1PromiseMode())
+    status_->setText(QStringLiteral("P1 Finder Promise 模式：拖动两个测试条目到 Finder"));
 #endif
 }
 

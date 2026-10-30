@@ -3,6 +3,18 @@
   "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
   "configurePresets": [
     {
+      "name": "macos-arm64-debug",
+      "displayName": "macOS Apple Silicon Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/macos-arm64-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_PREFIX_PATH": "/opt/homebrew/opt/qtbase",
+        "CMAKE_OSX_ARCHITECTURES": "arm64"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+    },
+    {
       "name": "windows-mingw-debug",
       "displayName": "Windows MinGW Debug",
       "generator": "MinGW Makefiles",
@@ -46,11 +58,17 @@
     }
   ],
   "buildPresets": [
+    { "name": "macos-arm64-debug", "configurePreset": "macos-arm64-debug" },
     { "name": "windows-mingw-debug", "configurePreset": "windows-mingw-debug" },
     { "name": "windows-mingw-release", "configurePreset": "windows-mingw-release" },
     { "name": "windows-core-tests", "configurePreset": "windows-core-tests" }
   ],
   "testPresets": [
+    {
+      "name": "macos-arm64-debug",
+      "configurePreset": "macos-arm64-debug",
+      "output": { "outputOnFailure": true }
+    },
     {
       "name": "windows-mingw-debug",
       "configurePreset": "windows-mingw-debug",
