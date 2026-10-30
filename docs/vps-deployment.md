@@ -1,6 +1,6 @@
 # VPS deployment record
 
-Recorded 2026-10-29 (Asia/Shanghai).
+Recorded 2026-10-29 and updated 2026-10-30 (Asia/Shanghai).
 
 ## Verified state
 
@@ -12,7 +12,7 @@ Recorded 2026-10-29 (Asia/Shanghai).
 - Application listener: `127.0.0.1:8787` only.
 - Public endpoint: `https://43.108.80.211:8443`, terminated by Caddy 2.6.2.
 - Local and public health checks: `{"status":"ok"}`. The public Windows check returned HTTP 200 with normal certificate verification; no insecure override was used.
-- The current manifest-capable Linux binary SHA-256 is `9cce7633ef079b6907b0b7c80fc495fa96e3dcd474766d9ead805ec2f72455ac`; systemd returned `active` after its 2026-10-29 upgrade.
+- The current phase-two Linux binary is 11,415,712 bytes with SHA-256 `b6d68ccb676c8d5180a9b05dedfbb8e31d5e549a84b1c651076203a6c1e9b847`; systemd returned `active` after its 2026-10-30 upgrade.
 
 The temporary upload copies in `/home/lyu` were removed after installation. No SSH password or application token is stored in this repository.
 
@@ -27,4 +27,19 @@ Active services were rechecked after configuration: `xray`, `dropspace`, and `ca
 The Windows Qt integration client subsequently paired through this endpoint and uploaded both a raw regular-file object and a folder ZIP object. The server published both as ready, and the client committed the returned two-entry snapshot to its local SQLite database. This exercised more than the unauthenticated health route while keeping application tokens out of the repository.
 
 The host also reported pending OS updates and a required restart. No upgrade or reboot was performed because that is separate from the DropSpace deployment and could affect existing services.
+
+## Phase-two deployment and rollback
+
+Before replacement, an online SQLite backup plus the old binary, application configuration, and systemd unit were saved under `/var/backups/dropspace/20261030T103734Z`. The backup database returned `PRAGMA quick_check=ok`. The candidate was hash-verified, installed atomically as `/usr/local/bin/dropspace-server`, and `dropspace.service` was restarted once at 2026-10-30 18:51 CST.
+
+Startup applied additive schema migration version 2. Production then reported `migration_v2=1`, both clipboard tables present, and `PRAGMA quick_check=ok`. Loopback and trusted public health checks passed. Public authenticated tests passed the original file upload/snapshot/download path plus clipboard text, PNG, thumbnail, HTTP history/latest/content/delete/clear, and WSS snapshot/create notification. Test clipboard blobs were cleared; the clipboard object directories contained no residual test files. `dropspace`, `caddy`, and `xray` remained active, and the DropSpace journal contained no warning-or-higher entries after deployment.
+
+Rollback, if required, is:
+
+1. stop `dropspace.service`;
+2. restore `dropspace-server` and `dropspace.sqlite` from the timestamped backup;
+3. preserve the failed database separately for diagnosis;
+4. start the service and verify loopback/public health plus an authenticated file snapshot.
+
+Do not drop clipboard tables in place. Caddy, certificates, xray, firewall rules, and `/etc/dropspace/config.json` were not modified by this phase-two deployment.
 
