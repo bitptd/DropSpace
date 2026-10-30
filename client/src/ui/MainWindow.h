@@ -52,6 +52,7 @@ class MainWindow final : public QMainWindow {
   bool sortAscending_ = true;
   bool iconView_ = true;
   bool trayPopup_ = false;
+  bool nativeDragActive_ = false;
   QTimer* trayDismissTimer_ = nullptr;
   QRect normalGeometry_;
 };

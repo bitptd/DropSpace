@@ -8,6 +8,7 @@
 #include <QActionGroup>
 #include <QCollator>
 #include <QCloseEvent>
+#include <QCursor>
 #include <QDateTime>
 #include <QDragEnterEvent>
 #include <QDropEvent>
@@ -86,7 +87,7 @@ class NativeDragListWidget final : public QListWidget {
         (event->position().toPoint() - pressPosition_).manhattanLength() >=
             QApplication::startDragDistance()) {
       armed_ = false;
-      if (currentItem() && startNativeDrag) startNativeDrag();
+      if (currentItem() && startNativeDrag) runNativeDrag();
       return;
     }
     QListWidget::mouseMoveEvent(event);
@@ -98,10 +99,29 @@ class NativeDragListWidget final : public QListWidget {
   }
 
   void startDrag(Qt::DropActions) override {
-    if (currentItem() && startNativeDrag) startNativeDrag();
+    if (currentItem() && startNativeDrag) runNativeDrag();
   }
 
  private:
+  void runNativeDrag() {
+    startNativeDrag();
+
+    // Windows OLE runs its own nested event loop and consumes the physical
+    // button-up event. Qt therefore may never receive mouseReleaseEvent and
+    // can remain in its rubber-band selection state after DoDragDrop returns.
+    // Feed the view the missing release and explicitly reset its state.
+    armed_ = false;
+    const QPoint local = viewport()->mapFromGlobal(QCursor::pos());
+    QMouseEvent release(QEvent::MouseButtonRelease, QPointF(local),
+                        QPointF(QCursor::pos()), Qt::LeftButton, Qt::NoButton,
+                        QApplication::keyboardModifiers());
+    QListWidget::mouseReleaseEvent(&release);
+    setState(QAbstractItemView::NoState);
+    releaseMouse();
+    viewport()->releaseMouse();
+    viewport()->update();
+  }
+
   QPoint pressPosition_;
   bool armed_ = false;
 };
@@ -119,6 +139,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
       trayDismissTimer_->stop();
       return;
     }
+    if (nativeDragActive_) return;
 #ifdef _WIN32
     const HWND foreground = GetForegroundWindow();
     if (!foreground) return;
@@ -512,7 +533,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
       }
     }
     std::wstring error;
-    if (!windows::startVirtualFileDrag(std::move(virtualEntries), &error) && !error.empty())
+    nativeDragActive_ = true;
+    const bool dragSucceeded = windows::startVirtualFileDrag(std::move(virtualEntries), &error);
+    nativeDragActive_ = false;
+    if (!dragSucceeded && !error.empty())
       QMessageBox::warning(this, QStringLiteral("云端拖出失败"), QString::fromStdWString(error));
   };
   nativeFiles->startNativeDrag = startSelectedDrag;
@@ -568,13 +592,13 @@ void MainWindow::showTrayPopup(const QRect& trayGeometry) {
 
 void MainWindow::changeEvent(QEvent* event) {
   QMainWindow::changeEvent(event);
-  if (!trayPopup_ || event->type() != QEvent::WindowDeactivate) return;
+  if (!trayPopup_ || nativeDragActive_ || event->type() != QEvent::WindowDeactivate) return;
 
   // Defer the decision until Qt has activated a context menu or modal dialog.
   // Those child surfaces must remain usable from the tray popup. A genuine
   // click into another application leaves neither active and hides the popup.
   QTimer::singleShot(0, this, [this] {
-    if (!trayPopup_ || !isVisible()) return;
+    if (!trayPopup_ || nativeDragActive_ || !isVisible()) return;
     if (QApplication::activePopupWidget() || QApplication::activeModalWidget()) return;
     if (QApplication::activeWindow() == this) return;
     hide();
