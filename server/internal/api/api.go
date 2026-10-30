@@ -36,6 +36,7 @@ type API struct {
 	uploading   map[string]struct{}
 	pairMu      sync.Mutex
 	pairLimits  map[string]pairLimit
+	clipboard   *clipboardHub
 }
 
 type pairLimit struct {
@@ -67,7 +68,7 @@ type fileMetadata struct {
 }
 
 func New(st *store.Store, logger *slog.Logger, development bool) http.Handler {
-	api := &API{store: st, log: logger, development: development, uploading: make(map[string]struct{}), pairLimits: make(map[string]pairLimit)}
+	api := &API{store: st, log: logger, development: development, uploading: make(map[string]struct{}), pairLimits: make(map[string]pairLimit), clipboard: newClipboardHub()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", api.health)
 	mux.HandleFunc("POST /v1/pair", api.pair)
@@ -81,6 +82,14 @@ func New(st *store.Store, logger *slog.Logger, development bool) http.Handler {
 	mux.Handle("DELETE /v1/files/{id}", api.auth(http.HandlerFunc(api.deleteFile)))
 	mux.Handle("GET /v1/snapshot", api.auth(http.HandlerFunc(api.snapshot)))
 	mux.Handle("GET /v1/events", api.auth(http.HandlerFunc(api.events)))
+	mux.Handle("POST /v1/clipboard", api.auth(http.HandlerFunc(api.createClipboard)))
+	mux.Handle("GET /v1/clipboard/history", api.auth(http.HandlerFunc(api.clipboardHistory)))
+	mux.Handle("GET /v1/clipboard/latest", api.auth(http.HandlerFunc(api.clipboardLatest)))
+	mux.Handle("GET /v1/clipboard/{id}/content", api.auth(http.HandlerFunc(api.clipboardContent)))
+	mux.Handle("GET /v1/clipboard/{id}/thumbnail", api.auth(http.HandlerFunc(api.clipboardThumbnail)))
+	mux.Handle("DELETE /v1/clipboard/{id}", api.auth(http.HandlerFunc(api.deleteClipboard)))
+	mux.Handle("DELETE /v1/clipboard", api.auth(http.HandlerFunc(api.clearClipboard)))
+	mux.Handle("GET /v1/clipboard/ws", api.auth(http.HandlerFunc(api.clipboardWebSocket)))
 	return api.requestLog(mux)
 }
 

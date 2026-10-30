@@ -18,6 +18,8 @@ namespace dropspace {
 
 class ApiClient;
 class ClientDatabase;
+class ClipboardController;
+class ClipboardHistoryDialog;
 
 class MainWindow final : public QMainWindow {
  public:
@@ -44,6 +46,8 @@ class MainWindow final : public QMainWindow {
   QWidget* actionBar_ = nullptr;
   std::unique_ptr<ClientDatabase> database_;
   ApiClient* api_ = nullptr;
+  ClipboardController* clipboard_ = nullptr;
+  ClipboardHistoryDialog* clipboardHistory_ = nullptr;
   QHash<QString, QJsonArray> folderManifests_;
   QHash<QString, QString> preparedDragObjects_;
   QHash<QString, QString> preparedDragFolders_;

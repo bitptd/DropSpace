@@ -3,6 +3,7 @@ module dropspace/server
 go 1.24.0
 
 require (
+	github.com/coder/websocket v1.8.15
 	golang.org/x/text v0.30.0
 	modernc.org/sqlite v1.39.1
 )

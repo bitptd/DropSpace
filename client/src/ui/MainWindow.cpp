@@ -1,13 +1,16 @@
 #include "ui/MainWindow.h"
 
 #include "core/ApiClient.h"
+#include "core/ClipboardController.h"
 #include "core/SafeExtractor.h"
 #include "storage/ClientDatabase.h"
+#include "ui/ClipboardHistoryDialog.h"
 
 #include <QApplication>
 #include <QActionGroup>
 #include <QCollator>
 #include <QCloseEvent>
+#include <QCheckBox>
 #include <QCursor>
 #include <QDateTime>
 #include <QDragEnterEvent>
@@ -26,12 +29,15 @@
 #include <QJsonObject>
 #include <QListWidget>
 #include <QLineEdit>
+#include <QKeySequenceEdit>
 #include <QMimeData>
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QMenu>
 #include <QStyle>
 #include <QPushButton>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QStatusBar>
 #include <QScreen>
 #include <QSysInfo>
@@ -286,6 +292,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     QMessageBox::critical(this, QStringLiteral("本地数据库失败"), databaseError);
   } else {
     api_ = new ApiClient(database_.get(), this);
+    clipboard_ = new ClipboardController(api_, database_.get(), this);
+    clipboardHistory_ = new ClipboardHistoryDialog(clipboard_, this);
     connect(api_, &ApiClient::statusChanged, status_, &QLabel::setText);
     connect(api_, &ApiClient::failed, this, [this](const QString& message) {
       status_->setText(message);
@@ -325,26 +333,87 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(api_, &ApiClient::cacheUsageChanged, this, [this](qint64 bytes) {
       status_->setText(QStringLiteral("自动缓存 %1 / 52,428,800 bytes").arg(bytes));
     });
+    connect(clipboard_, &ClipboardController::statusChanged, status_, &QLabel::setText);
+    connect(clipboard_, &ClipboardController::failed, this, [this](const QString& message) {
+      status_->setText(message);
+      QMessageBox::warning(this, QStringLiteral("共享剪贴板"), message);
+    });
+    connect(clipboard_, &ClipboardController::historyHotkeyActivated,
+            clipboardHistory_, &ClipboardHistoryDialog::openHistory);
     QString restoreError;
     if (!api_->restore(&restoreError) && !restoreError.isEmpty()) {
       status_->setText(QStringLiteral("凭据恢复失败：%1").arg(restoreError));
     }
+    QString clipboardError;
+    if (!clipboard_->initialize(&clipboardError)) {
+      status_->setText(QStringLiteral("共享剪贴板初始化失败：%1").arg(clipboardError));
+    }
   }
 
   connect(pairButton, &QPushButton::clicked, this, [this] {
-    if (!api_) return;
-    bool ok = false;
-    const QString server = QInputDialog::getText(this, QStringLiteral("DropSpace 服务器"),
-        QStringLiteral("HTTPS 地址"), QLineEdit::Normal,
-        QStringLiteral("https://43.108.80.211:8443"), &ok);
-    if (!ok || server.isEmpty()) return;
-    const QString token = QInputDialog::getText(this, QStringLiteral("设备配对"),
-        QStringLiteral("一次性配对令牌"), QLineEdit::Password, {}, &ok);
-    if (!ok || token.isEmpty()) return;
-    const QString name = QInputDialog::getText(this, QStringLiteral("设备名称"),
-        QStringLiteral("此设备显示名称"), QLineEdit::Normal,
-        QSysInfo::machineHostName(), &ok);
-    if (ok && !name.trimmed().isEmpty()) api_->pair(server, token, name);
+    if (!api_ || !clipboard_) return;
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("设备与共享剪贴板设置"));
+    dialog.setMinimumWidth(430);
+    auto* settings = new QVBoxLayout(&dialog);
+    auto* enabled = new QCheckBox(QStringLiteral("启用跨设备共享剪贴板"), &dialog);
+    enabled->setChecked(clipboard_->enabled());
+    auto* privacy = new QLabel(
+        QStringLiteral("启用后，复制的文字和图片会加密传输到已配对的 VPS，\n并同步到同一空间中的在线设备。"), &dialog);
+    privacy->setWordWrap(true);
+    privacy->setStyleSheet(QStringLiteral("color:#667085; padding:2px 0 8px 0;"));
+    auto* syncStatus = new QLabel(clipboard_->enabled()
+        ? QStringLiteral("状态：正在连接共享剪贴板") : QStringLiteral("状态：已关闭"), &dialog);
+    auto* online = new QLabel(QStringLiteral("当前在线设备：%1").arg(clipboard_->onlineDevices()), &dialog);
+    auto* shortcutLabel = new QLabel(QStringLiteral("历史面板全局快捷键"), &dialog);
+    auto* shortcut = new QKeySequenceEdit(clipboard_->hotkey(), &dialog);
+    auto* history = new QPushButton(QStringLiteral("打开最近 20 条历史"), &dialog);
+    auto* clear = new QPushButton(QStringLiteral("清空所有共享剪贴板历史"), &dialog);
+    auto* pair = new QPushButton(api_->isPaired() ? QStringLiteral("重新配对设备…")
+                                                  : QStringLiteral("配对设备…"), &dialog);
+    auto* close = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+    settings->addWidget(enabled);
+    settings->addWidget(privacy);
+    settings->addWidget(syncStatus);
+    settings->addWidget(online);
+    settings->addSpacing(8);
+    settings->addWidget(shortcutLabel);
+    settings->addWidget(shortcut);
+    settings->addSpacing(8);
+    settings->addWidget(history);
+    settings->addWidget(clear);
+    settings->addWidget(pair);
+    settings->addWidget(close);
+    connect(enabled, &QCheckBox::toggled, clipboard_, &ClipboardController::setEnabled);
+    connect(shortcut, &QKeySequenceEdit::editingFinished, this,
+            [this, shortcut] { clipboard_->setHotkey(shortcut->keySequence()); });
+    connect(clipboard_, &ClipboardController::statusChanged, syncStatus,
+            [syncStatus](const QString& text) { syncStatus->setText(QStringLiteral("状态：%1").arg(text)); });
+    connect(clipboard_, &ClipboardController::onlineDevicesChanged, online,
+            [online](int count) { online->setText(QStringLiteral("当前在线设备：%1").arg(count)); });
+    connect(history, &QPushButton::clicked, this, [this] { clipboardHistory_->openHistory(); });
+    connect(clear, &QPushButton::clicked, this, [this, &dialog] {
+      if (QMessageBox::question(&dialog, QStringLiteral("清空共享剪贴板历史"),
+            QStringLiteral("确定删除所有设备共享的最近剪贴板历史吗？")) == QMessageBox::Yes)
+        clipboard_->clearHistory();
+    });
+    connect(pair, &QPushButton::clicked, this, [this, &dialog] {
+      bool ok = false;
+      const QString server = QInputDialog::getText(&dialog, QStringLiteral("DropSpace 服务器"),
+          QStringLiteral("HTTPS 地址"), QLineEdit::Normal,
+          api_->serverUrl().isEmpty() ? QStringLiteral("https://43.108.80.211:8443")
+                                      : api_->serverUrl(), &ok);
+      if (!ok || server.isEmpty()) return;
+      const QString token = QInputDialog::getText(&dialog, QStringLiteral("设备配对"),
+          QStringLiteral("一次性配对令牌"), QLineEdit::Password, {}, &ok);
+      if (!ok || token.isEmpty()) return;
+      const QString name = QInputDialog::getText(&dialog, QStringLiteral("设备名称"),
+          QStringLiteral("此设备显示名称"), QLineEdit::Normal,
+          QSysInfo::machineHostName(), &ok);
+      if (ok && !name.trimmed().isEmpty()) api_->pair(server, token, name);
+    });
+    connect(close, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    dialog.exec();
   });
 
   auto saveSelected = [this] {

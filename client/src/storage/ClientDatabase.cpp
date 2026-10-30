@@ -56,6 +56,9 @@ bool ClientDatabase::open(QString* error) {
       QStringLiteral(R"SQL(CREATE TABLE IF NOT EXISTS local_sources(
   file_id TEXT PRIMARY KEY, kind TEXT NOT NULL, original_path TEXT NOT NULL,
   uploaded_object_sha256 TEXT NOT NULL, tree_sha256 TEXT
+))SQL"),
+      QStringLiteral(R"SQL(CREATE TABLE IF NOT EXISTS app_settings(
+  key TEXT PRIMARY KEY, value TEXT NOT NULL
 ))SQL")};
   for (const auto& statement : statements) {
     if (!execute(&query, statement, error)) return false;
@@ -148,6 +151,29 @@ LocalSource ClientDatabase::localSource(const QString& fileId, QString* error) c
   if (!query.next()) return {};
   return {query.value(0).toString(), query.value(1).toString(),
           query.value(2).toString(), query.value(3).toString()};
+}
+
+QString ClientDatabase::setting(const QString& key, const QString& defaultValue,
+                                QString* error) const {
+  QSqlQuery query(database_);
+  query.prepare(QStringLiteral("SELECT value FROM app_settings WHERE key=?"));
+  query.addBindValue(key);
+  if (!query.exec()) {
+    if (error) *error = query.lastError().text();
+    return defaultValue;
+  }
+  return query.next() ? query.value(0).toString() : defaultValue;
+}
+
+bool ClientDatabase::setSetting(const QString& key, const QString& value, QString* error) {
+  QSqlQuery query(database_);
+  query.prepare(QStringLiteral("INSERT INTO app_settings(key,value) VALUES(?,?) "
+                               "ON CONFLICT(key) DO UPDATE SET value=excluded.value"));
+  query.addBindValue(key);
+  query.addBindValue(value);
+  if (query.exec()) return true;
+  if (error) *error = query.lastError().text();
+  return false;
 }
 
 }  // namespace dropspace

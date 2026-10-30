@@ -103,6 +103,10 @@ QNetworkRequest ApiClient::request(const QString& relative) const {
   return result;
 }
 
+QNetworkRequest ApiClient::authenticatedRequest(const QString& relative) const {
+  return request(relative);
+}
+
 void ApiClient::pair(const QString& serverUrl, const QString& pairingToken,
                      const QString& displayName) {
   QString error;

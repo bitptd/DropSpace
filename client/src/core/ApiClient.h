@@ -14,6 +14,7 @@
 #include <functional>
 
 class QNetworkReply;
+class QNetworkRequest;
 
 namespace dropspace {
 
@@ -26,6 +27,8 @@ class ApiClient final : public QObject {
   [[nodiscard]] bool restore(QString* error);
   [[nodiscard]] bool isPaired() const { return !token_.isEmpty(); }
   [[nodiscard]] QString serverUrl() const { return server_.toString(); }
+  [[nodiscard]] QString deviceId() const { return deviceId_; }
+  [[nodiscard]] QNetworkRequest authenticatedRequest(const QString& relative) const;
   void pair(const QString& serverUrl, const QString& pairingToken, const QString& displayName);
   void refreshSnapshot();
   void uploadPath(const QString& path);

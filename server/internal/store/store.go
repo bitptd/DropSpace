@@ -64,6 +64,42 @@ CREATE INDEX IF NOT EXISTS idx_files_expiry ON files(state,expires_at);
 CREATE INDEX IF NOT EXISTS idx_events_space_seq ON events(space_id,seq);
 `
 
+const clipboardMigrationV2 = `
+CREATE TABLE IF NOT EXISTS clipboard_blobs(
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  content_hash TEXT NOT NULL,
+  content_type TEXT NOT NULL CHECK(content_type IN ('text','image/png')),
+  content_size INTEGER NOT NULL CHECK(content_size >= 0),
+  object_key TEXT NOT NULL UNIQUE,
+  thumbnail_key TEXT,
+  ref_count INTEGER NOT NULL CHECK(ref_count >= 0),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(space_id,content_hash)
+);
+CREATE TABLE IF NOT EXISTS clipboard_items(
+  server_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+  clipboard_id TEXT NOT NULL UNIQUE,
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  source_device_id TEXT NOT NULL REFERENCES devices(id),
+  content_type TEXT NOT NULL CHECK(content_type IN ('text','image/png')),
+  copied_at TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  content_size INTEGER NOT NULL CHECK(content_size >= 0),
+  preview TEXT,
+  object_key TEXT NOT NULL,
+  thumbnail_key TEXT,
+  created_at TEXT NOT NULL,
+  protocol_version INTEGER NOT NULL DEFAULT 1,
+  FOREIGN KEY(space_id,content_hash) REFERENCES clipboard_blobs(space_id,content_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_clipboard_history
+  ON clipboard_items(space_id,copied_at DESC,server_sequence DESC,clipboard_id DESC);
+CREATE INDEX IF NOT EXISTS idx_clipboard_sequence
+  ON clipboard_items(space_id,server_sequence);
+CREATE INDEX IF NOT EXISTS idx_clipboard_source
+  ON clipboard_items(source_device_id,clipboard_id);
+`
+
 type Store struct {
 	DB      *sql.DB
 	DataDir string
@@ -86,7 +122,9 @@ func Open(dataDir string) (*Store, error) {
 	if dataDir == "" {
 		return nil, errors.New("data directory is required")
 	}
-	for _, dir := range []string{dataDir, filepath.Join(dataDir, "objects"), filepath.Join(dataDir, "uploads")} {
+	for _, dir := range []string{dataDir, filepath.Join(dataDir, "objects"), filepath.Join(dataDir, "uploads"),
+		filepath.Join(dataDir, "clipboard", "objects"), filepath.Join(dataDir, "clipboard", "thumbnails"),
+		filepath.Join(dataDir, "clipboard", "tmp")} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return nil, fmt.Errorf("create data directory: %w", err)
 		}
@@ -100,7 +138,34 @@ func Open(dataDir string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
+	if err = applyClipboardMigration(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate clipboard database: %w", err)
+	}
 	return &Store{DB: db, DataDir: dataDir}, nil
+}
+
+func applyClipboardMigration(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var present int
+	err = tx.QueryRow("SELECT COUNT(*) FROM schema_migrations WHERE version=2").Scan(&present)
+	if err != nil {
+		return err
+	}
+	if present == 0 {
+		if _, err = tx.Exec(clipboardMigrationV2); err != nil {
+			return err
+		}
+		if _, err = tx.Exec("INSERT INTO schema_migrations(version,applied_at) VALUES(2,?)",
+			time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Store) Close() error { return s.DB.Close() }
@@ -182,4 +247,16 @@ func (s *Store) ObjectPath(objectKey string) string {
 
 func (s *Store) UploadPath(tempKey string) string {
 	return filepath.Join(s.DataDir, "uploads", tempKey+".part")
+}
+
+func (s *Store) ClipboardObjectPath(objectKey string) string {
+	return filepath.Join(s.DataDir, "clipboard", "objects", objectKey+".bin")
+}
+
+func (s *Store) ClipboardThumbnailPath(objectKey string) string {
+	return filepath.Join(s.DataDir, "clipboard", "thumbnails", objectKey+".png")
+}
+
+func (s *Store) ClipboardTempPath(objectKey string) string {
+	return filepath.Join(s.DataDir, "clipboard", "tmp", objectKey+".part")
 }

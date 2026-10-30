@@ -32,6 +32,9 @@ class ClientDatabase final {
                                      const QString& treeSha256, QString* error);
   [[nodiscard]] bool replaceSnapshot(const QJsonArray& files, qint64 snapshotSeq, QString* error);
   [[nodiscard]] LocalSource localSource(const QString& fileId, QString* error) const;
+  [[nodiscard]] QString setting(const QString& key, const QString& defaultValue,
+                                QString* error) const;
+  [[nodiscard]] bool setSetting(const QString& key, const QString& value, QString* error);
 
  private:
   QString connectionName_;

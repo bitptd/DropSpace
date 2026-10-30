@@ -4,6 +4,24 @@ Last updated: 2026-10-30 (Asia/Shanghai).
 
 Legend: **PASS** was executed and observed; **IMPLEMENTED / UNVERIFIED** exists in source but lacks the named real-system test; **PENDING** is not yet implemented.
 
+## Phase-two shared clipboard status
+
+| Stage | Implemented | Verified on this host | Still unverified / incomplete |
+| --- | --- | --- | --- |
+| C0 protocol and storage | Protocol v1, additive SQLite migration v2, independent blob/refcount store, deterministic `copied_at` ordering, 20-item pruning, 256 MiB unique-blob quota | **PASS:** Go lifecycle, ordering, idempotency, authentication, clock rejection, PNG thumbnail, dedup/refcount/cleanup tests | Production migration and rollback restore are not yet exercised |
+| C1 HTTP and WebSocket | Authenticated upload/history/latest/content/thumbnail/delete/clear plus snapshot/created/deleted/cleared/presence WebSocket events and reconnect recovery contract | **PASS locally:** all Go packages pass, including a real WebSocket upgrade, initial snapshot, online count, and pushed create event | Public HTTPS/WSS and multi-device reconnect need VPS deployment |
+| C2 Windows native bridge | Hidden message-only window, `AddClipboardFormatListener`, UTF-16 text, PNG/CF_DIB conversion, CF_DIBV5 write, bounded image decode, private marker loop suppression, global hotkey | **PASS on Windows 11:** executable native integration captured external text, wrote remote text and PNG, exposed PNG/CF_DIBV5, suppressed both DropSpace writes, and restored the prior OLE clipboard object | Real two-device traffic and third-party app paste compatibility remain to be observed |
+| C3 Windows sync and UI | Persistent switch/hotkey/apply cursor, authenticated multipart upload/download verification, WebSocket backoff, authoritative-history apply, compact 20-item history with thumbnails/source/time/keyboard/context delete, settings/status/online count/clear | **PASS:** Debug client compiles and links with Qt WebSockets | Interactive settings/history and global-hotkey behavior need UI acceptance against the deployed VPS |
+| C4 macOS handoff | Exact API, data model, WebSocket, integration guide, and implementation checklist | **PASS:** required documents exist and examples were checked against implemented route/type names | macOS native code remains intentionally out of scope for this branch |
+| C5 production deployment/release | Linux amd64 build, VPS backup/deploy/restart/regression, Windows 2.0 portable release | PENDING | Requires VPS change confirmation before the brief service restart |
+
+Phase-two commands executed on 2026-10-30:
+
+- `go test ./...`: PASS for `internal/api` and `internal/zipcheck`; remaining packages have no tests.
+- `cmake --build --preset windows-mingw-debug --parallel 4`: PASS, including `DropSpace.exe` and `windows_clipboard_integration.exe`.
+- `ctest --preset windows-mingw-debug`: PASS 4/4 phase-one regression tests.
+- `windows_clipboard_integration.exe`: PASS for native text capture, remote text/PNG write, registered PNG plus CF_DIBV5, and private-marker loop suppression.
+
 ## Stage status
 
 | Stage | Implemented | Verified on this host | Still unverified / incomplete |

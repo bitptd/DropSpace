@@ -22,7 +22,7 @@ if(DROPSPACE_BUILD_TESTS)
 endif()
 
 if(DROPSPACE_BUILD_CLIENT)
-  find_package(Qt6 6.8 REQUIRED COMPONENTS Core Concurrent Gui Widgets Network Sql ZlibPrivate)
+  find_package(Qt6 6.8 REQUIRED COMPONENTS Core Concurrent Gui Widgets Network Sql WebSockets ZlibPrivate)
   qt_standard_project_setup()
 
   qt_add_executable(dropspace_client WIN32
@@ -31,12 +31,16 @@ if(DROPSPACE_BUILD_CLIENT)
     src/core/FolderPacker.h
     src/core/ApiClient.cpp
     src/core/ApiClient.h
+    src/core/ClipboardController.cpp
+    src/core/ClipboardController.h
     src/core/SafeExtractor.cpp
     src/core/SafeExtractor.h
     src/storage/ClientDatabase.cpp
     src/storage/ClientDatabase.h
     src/ui/MainWindow.cpp
     src/ui/MainWindow.h
+    src/ui/ClipboardHistoryDialog.cpp
+    src/ui/ClipboardHistoryDialog.h
   )
   qt_add_resources(dropspace_client dropspace_assets
     PREFIX "/"
@@ -45,7 +49,7 @@ if(DROPSPACE_BUILD_CLIENT)
   set_target_properties(dropspace_client PROPERTIES OUTPUT_NAME "DropSpace")
   target_link_libraries(dropspace_client PRIVATE
     dropspace_core
-    Qt6::Core Qt6::CorePrivate Qt6::Concurrent Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Sql
+    Qt6::Core Qt6::CorePrivate Qt6::Concurrent Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Sql Qt6::WebSockets
     Qt6::ZlibPrivate
   )
 
@@ -70,6 +74,16 @@ if(DROPSPACE_BUILD_CLIENT)
     add_test(NAME safe_extractor_tests COMMAND safe_extractor_tests)
 
     if(WIN32)
+      add_executable(windows_clipboard_integration
+        tests/windows_clipboard_integration.cpp
+        src/platform/windows/WindowsClipboard.cpp
+        src/platform/windows/WindowsClipboard.h
+      )
+      target_include_directories(windows_clipboard_integration PRIVATE src)
+      target_compile_definitions(windows_clipboard_integration PRIVATE UNICODE _UNICODE NOMINMAX)
+      target_link_libraries(windows_clipboard_integration PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets ole32)
+      add_test(NAME windows_clipboard_integration COMMAND windows_clipboard_integration)
+
       add_executable(api_client_integration
         tests/api_client_integration.cpp
         src/core/ApiClient.cpp src/core/ApiClient.h
@@ -95,6 +109,8 @@ if(DROPSPACE_BUILD_CLIENT)
       src/platform/windows/VirtualFileDrag.h
       src/platform/windows/CredentialStore.cpp
       src/platform/windows/CredentialStore.h
+      src/platform/windows/WindowsClipboard.cpp
+      src/platform/windows/WindowsClipboard.h
     )
     target_compile_definitions(dropspace_client PRIVATE UNICODE _UNICODE NOMINMAX)
     target_link_libraries(dropspace_client PRIVATE advapi32 ole32 shell32 uuid)
