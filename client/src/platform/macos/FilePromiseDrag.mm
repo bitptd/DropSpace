@@ -201,36 +201,17 @@ static void releasePromiseOwner(dropspace::macos::PromiseSession* session) {
       failure = QStringLiteral("Content provider returned no verified object");
     if (failure.isEmpty()) {
       // AppKit supplies the final promised-item URL here, not its parent
-      // directory.  Coordinate that exact URL and publish via a sibling
-      // temporary item so Finder never observes partial content.
-      NSFileCoordinator* coordinator = [[NSFileCoordinator alloc] initWithFilePresenter:nil];
-      __block bool accessorRan = false;
-      __block QString coordinatedFailure;
-      NSError* coordinationError = nil;
-      [coordinator coordinateWritingItemAtURL:destinationURL
-                                      options:0
-                                        error:&coordinationError
-                                   byAccessor:^(NSURL* coordinatedURL) {
-        accessorRan = true;
-        const QString destination = dropspace::macos::qtText(coordinatedURL.path);
-        if (entry.folder) {
-          std::vector<dropspace::ExtractedEntry> manifest;
-          if (!dropspace::safeExtractZip(object, destination, &manifest,
-                                         &coordinatedFailure)) {
-            coordinatedFailure = QStringLiteral("Safe folder delivery failed: %1")
-                                     .arg(coordinatedFailure);
-          }
-        } else {
-          dropspace::macos::writeRegularFile(object, destination, &coordinatedFailure);
+      // directory. Finder already coordinates the receiver-side read; doing
+      // another synchronous NSFileCoordinator write here can deadlock that
+      // read. Publish the already verified object atomically at the exact URL.
+      const QString destination = dropspace::macos::qtText(destinationURL.path);
+      if (entry.folder) {
+        std::vector<dropspace::ExtractedEntry> manifest;
+        if (!dropspace::safeExtractZip(object, destination, &manifest, &failure)) {
+          failure = QStringLiteral("Safe folder delivery failed: %1").arg(failure);
         }
-      }];
-      if (!coordinatedFailure.isEmpty()) {
-        failure = coordinatedFailure;
-      } else if (coordinationError) {
-        failure = QStringLiteral("Finder file coordination failed: %1")
-                      .arg(dropspace::macos::qtText(coordinationError.localizedDescription));
-      } else if (!accessorRan) {
-        failure = QStringLiteral("Finder file coordinator did not provide a destination");
+      } else {
+        dropspace::macos::writeRegularFile(object, destination, &failure);
       }
     }
   }
@@ -271,6 +252,18 @@ static void releasePromiseOwner(dropspace::macos::PromiseSession* session) {
   if (operation == NSDragOperationNone && _session->started.load() == 0) {
     _session->cancelled.store(true);
     releasePromiseOwner(_session.get());
+  } else if (_session->started.load() == 0) {
+    // A destination can accept the drag but never request the promise. Keep
+    // the providers alive long enough for Finder to start, then retire the
+    // orphaned session so Quit is not blocked forever.
+    const auto pending = _session;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_SEC),
+                   dispatch_get_main_queue(), ^{
+      if (pending->started.load() == 0) {
+        pending->cancelled.store(true);
+        releasePromiseOwner(pending.get());
+      }
+    });
   }
 }
 

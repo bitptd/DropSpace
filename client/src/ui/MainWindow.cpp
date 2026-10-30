@@ -341,10 +341,16 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(api_, &ApiClient::cacheUsageChanged, this, [this](qint64 bytes) {
       status_->setText(QStringLiteral("自动缓存 %1 / 52,428,800 bytes").arg(bytes));
     });
+#ifdef __APPLE__
+    if (!p1PromiseMode()) {
+#endif
     QString restoreError;
     if (!api_->restore(&restoreError) && !restoreError.isEmpty()) {
       status_->setText(QStringLiteral("凭据恢复失败：%1").arg(restoreError));
     }
+#ifdef __APPLE__
+    }
+#endif
   }
 
   connect(pairButton, &QPushButton::clicked, this, [this] {
