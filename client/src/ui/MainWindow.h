@@ -10,6 +10,7 @@
 
 class QLabel;
 class QListWidget;
+class QFrame;
 class QCloseEvent;
 class QEvent;
 class QTimer;
@@ -40,6 +41,8 @@ class MainWindow final : public QMainWindow {
   void updatePreparedSelectionStatus();
 
   QListWidget* files_ = nullptr;
+  QFrame* dropZone_ = nullptr;
+  QLabel* dropHint_ = nullptr;
   QLabel* status_ = nullptr;
   QWidget* actionBar_ = nullptr;
   std::unique_ptr<ClientDatabase> database_;

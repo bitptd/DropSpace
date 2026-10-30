@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QIcon>
 #include <QMenu>
+#include <QCursor>
 #include <QSystemTrayIcon>
 #include <QMessageBox>
 
@@ -30,12 +31,20 @@ int main(int argc, char* argv[]) {
   auto* showAction = trayMenu.addAction(QStringLiteral("打开完整窗口"));
   trayMenu.addSeparator();
   auto* quitAction = trayMenu.addAction(QStringLiteral("彻底退出"));
+#ifndef __APPLE__
   tray.setContextMenu(&trayMenu);
+#endif
   QObject::connect(showAction, &QAction::triggered, &app, [&window] {
     window.showFullWindow();
   });
   QObject::connect(&tray, &QSystemTrayIcon::activated, &app,
-                   [&window, &tray](QSystemTrayIcon::ActivationReason reason) {
+                   [&window, &tray, &trayMenu](QSystemTrayIcon::ActivationReason reason) {
+#ifdef __APPLE__
+    if (reason == QSystemTrayIcon::Context) {
+      trayMenu.popup(QCursor::pos());
+      return;
+    }
+#endif
     if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick)
       window.showTrayPopup(tray.geometry());
   });

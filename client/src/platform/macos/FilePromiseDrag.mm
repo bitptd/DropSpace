@@ -187,7 +187,7 @@ static void releasePromiseOwner(dropspace::macos::PromiseSession* session) {
 }
 
 - (void)filePromiseProvider:(NSFilePromiseProvider*)provider
-          writePromiseToURL:(NSURL*)destinationDirectory
+          writePromiseToURL:(NSURL*)destinationURL
           completionHandler:(void (^)(NSError* _Nullable))completionHandler {
   Q_UNUSED(provider);
   _session->started.fetch_add(1);
@@ -200,14 +200,37 @@ static void releasePromiseOwner(dropspace::macos::PromiseSession* session) {
     if (failure.isEmpty() && object.isEmpty())
       failure = QStringLiteral("Content provider returned no verified object");
     if (failure.isEmpty()) {
-      const QString directory = dropspace::macos::qtText(destinationDirectory.path);
-      const QString destination = QDir(directory).filePath(entry.fileName);
-      if (entry.folder) {
-        std::vector<dropspace::ExtractedEntry> manifest;
-        if (!dropspace::safeExtractZip(object, destination, &manifest, &failure))
-          failure = QStringLiteral("Safe folder delivery failed: %1").arg(failure);
-      } else if (!dropspace::macos::writeRegularFile(object, destination, &failure)) {
-        // writeRegularFile returns the reason and removes its unpublished part.
+      // AppKit supplies the final promised-item URL here, not its parent
+      // directory.  Coordinate that exact URL and publish via a sibling
+      // temporary item so Finder never observes partial content.
+      NSFileCoordinator* coordinator = [[NSFileCoordinator alloc] initWithFilePresenter:nil];
+      __block bool accessorRan = false;
+      __block QString coordinatedFailure;
+      NSError* coordinationError = nil;
+      [coordinator coordinateWritingItemAtURL:destinationURL
+                                      options:0
+                                        error:&coordinationError
+                                   byAccessor:^(NSURL* coordinatedURL) {
+        accessorRan = true;
+        const QString destination = dropspace::macos::qtText(coordinatedURL.path);
+        if (entry.folder) {
+          std::vector<dropspace::ExtractedEntry> manifest;
+          if (!dropspace::safeExtractZip(object, destination, &manifest,
+                                         &coordinatedFailure)) {
+            coordinatedFailure = QStringLiteral("Safe folder delivery failed: %1")
+                                     .arg(coordinatedFailure);
+          }
+        } else {
+          dropspace::macos::writeRegularFile(object, destination, &coordinatedFailure);
+        }
+      }];
+      if (!coordinatedFailure.isEmpty()) {
+        failure = coordinatedFailure;
+      } else if (coordinationError) {
+        failure = QStringLiteral("Finder file coordination failed: %1")
+                      .arg(dropspace::macos::qtText(coordinationError.localizedDescription));
+      } else if (!accessorRan) {
+        failure = QStringLiteral("Finder file coordinator did not provide a destination");
       }
     }
   }

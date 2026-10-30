@@ -177,6 +177,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
       "QPushButton#deleteButton:hover { background: #fff1f0; }"
       "QPushButton#topButton:checked { background: #fff7dc; border-color: #d8a800; color: #6b5200; }"));
   auto* dropZone = new QFrame(central);
+  dropZone_ = dropZone;
   dropZone->setObjectName(QStringLiteral("dropZone"));
   dropZone->setMinimumHeight(260);
   dropZone->setStyleSheet(QStringLiteral(
@@ -192,6 +193,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   auto* dropHint = new QLabel(
       QStringLiteral("拖入文件或文件夹即可上传 · 单击准备后直接拖出 · 双击另存为 · 右击管理"),
       dropZone);
+  dropHint_ = dropHint;
   dropHint->setAlignment(Qt::AlignCenter);
   dropHint->setMinimumHeight(54);
   auto* nativeFiles = new NativeDragListWidget(dropZone);
@@ -646,6 +648,8 @@ void MainWindow::showFullWindow() {
   trayPopup_ = false;
   setWindowFlags(Qt::Window);
   actionBar_->show();
+  dropHint_->show();
+  dropZone_->setMinimumHeight(260);
   statusBar()->show();
   if (normalGeometry_.isValid()) setGeometry(normalGeometry_);
   showNormal();
@@ -658,13 +662,18 @@ void MainWindow::showTrayPopup(const QRect& trayGeometry) {
   hide();
   trayPopup_ = true;
   actionBar_->hide();
+  dropHint_->hide();
+  dropZone_->setMinimumHeight(0);
   statusBar()->hide();
   // Qt::Popup is dismissed by Windows as soon as the context QMenu takes
   // activation, which makes right-click actions inside the tray surface
   // unreliable. A frameless tool window stays out of the taskbar while the
   // WindowDeactivate handler below preserves click-outside dismissal.
   setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
-  resize(520, 360);
+  // Keep the left-click surface compact: only the dashed file area with two
+  // icon rows. Full-window and quit actions belong to the tray right-click
+  // menu and are never embedded in this popup.
+  resize(520, 240);
   const QScreen* screen = trayGeometry.isValid()
       ? QGuiApplication::screenAt(trayGeometry.center())
       : QGuiApplication::primaryScreen();
